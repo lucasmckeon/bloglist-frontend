@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Blog from './components/Blog';
-import { getAll, createBlog } from './services/blogs';
+import { getAll, createBlog, deleteBlog } from './services/blogs';
 import { login } from './services/login.js';
 import { setToken } from './services/token.js';
+import { Togglable } from './components/Togglable.jsx';
+import { CreateBlog } from './components/CreateBlog.jsx';
 const App = () => {
   const [blogs, setBlogs] = useState([]);
   const [user, setUser] = useState(() => {
@@ -14,10 +16,9 @@ const App = () => {
   });
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [title, setTitle] = useState('');
-  const [author, setAuthor] = useState('');
-  const [url, setURL] = useState('');
   const [status, setStatus] = useState(null);
+  const toggleRef = useRef({});
+
   useEffect(() => {
     const fetchBlogs = async () => {
       const fetchedBlogs = await getAll();
@@ -29,20 +30,21 @@ const App = () => {
     if (user) {
       setToken(user.token);
     }
-  }, []);
-
+  }, [user]);
   const handleLogin = async (e) => {
     e.preventDefault();
     try {
-      const user = await login(username, password);
-      setToken(user.token);
-      setUser(user);
-      localStorage.setItem('user', JSON.stringify(user));
+      const loggedInUser = await login(username, password);
+      setToken(loggedInUser.token);
+      setUser(loggedInUser);
+      localStorage.setItem('user', JSON.stringify(loggedInUser));
       setUsername('');
       setPassword('');
-    } catch (e) {
-      console.log('Error', e.response.data.error);
-      triggerStatusView(e.response.data.error ?? 'wrong username or password');
+    } catch (err) {
+      console.log('Error', err.response.data.error);
+      triggerStatusView(
+        err.response.data.error ?? 'wrong username or password'
+      );
     }
   };
 
@@ -52,7 +54,6 @@ const App = () => {
     setUser(null);
     setUsername('');
     setPassword('');
-    setBlogs([]);
   };
 
   const triggerStatusView = (message) => {
@@ -60,14 +61,11 @@ const App = () => {
     setTimeout(() => setStatus(null), 3000);
   };
 
-  const handleCreateBlog = async (e) => {
-    e.preventDefault();
+  const handleCreateBlog = async (title, author, url) => {
     try {
       const createdBlog = await createBlog({ title, author, url });
       setBlogs(blogs.concat(createdBlog));
-      setTitle('');
-      setAuthor('');
-      setURL('');
+      toggleRef.current.hide();
       triggerStatusView(
         `a new blog ${createdBlog.title} by ${createdBlog.author} author`
       );
@@ -76,59 +74,42 @@ const App = () => {
       alert('Error creating blog');
     }
   };
+
+  const handleDeleteBlog = async (blog) => {
+    if (window.confirm(`Are you sure you want to delete: ${blog.title}?`)) {
+      try {
+        await deleteBlog(blog);
+        setBlogs(blogs.filter((b) => b.id !== blog.id));
+      } catch (error) {
+        console.log('Error deleting blog:', error.message);
+      }
+    }
+  };
   return (
-    <div>
+    <div className="container">
       <h1>BlogList Application</h1>
       {user ? (
         <>
-          <h2>blogs</h2>
-          {status && <h3>{status}</h3>}
-          <p>
-            {user.name} logged in <button onClick={handleLogout}>logout</button>
-          </p>
-          <div>
-            <h2>create new</h2>
-            <form onSubmit={handleCreateBlog}>
-              <label htmlFor="titleInput">title:</label>
-              <input
-                type="text"
-                id="titleInput"
-                name="title"
-                value={title}
-                onChange={({ currentTarget }) => setTitle(currentTarget.value)}
-              />
-              <br />
-              <label htmlFor="authorInput">author:</label>
-              <input
-                type="text"
-                id="authorInput"
-                name="author"
-                value={author}
-                onChange={({ currentTarget }) => setAuthor(currentTarget.value)}
-              />
-              <br />
-              <label htmlFor="urlInput">url:</label>
-              <input
-                type="text"
-                id="urlInput"
-                name="url"
-                value={url}
-                onChange={({ currentTarget }) => setURL(currentTarget.value)}
-              />
-              <br />
-              <button type="submit">create</button>
-            </form>
+          <div className="header">
+            <h2>blogs</h2>
+            {status && <h3>{status}</h3>}
+            <p>
+              {user.name} logged in{' '}
+              <button onClick={handleLogout}>logout</button>
+            </p>
           </div>
-          {blogs.map((blog) => (
-            <Blog key={blog.id} blog={blog} />
-          ))}
+          <div className="blog-creator">
+            <Togglable innerRef={toggleRef} toggleButtonName={'new note'}>
+              <CreateBlog handleCreateBlog={handleCreateBlog} />
+            </Togglable>
+          </div>
         </>
       ) : (
-        <>
+        <div className="login">
           <h2>log in to application</h2>
           {status && <h3>{status}</h3>}
-          <form onSubmit={handleLogin}>
-            <div>
+          <form className="login__form" onSubmit={handleLogin}>
+            <div className="login__username-input">
               <label htmlFor="usernameInput">username</label>
               <input
                 type="text"
@@ -140,7 +121,7 @@ const App = () => {
                 }
               />
             </div>
-            <div>
+            <div className="login__password-input">
               <label htmlFor="passwordInput">password</label>
               <input
                 type="password"
@@ -154,8 +135,19 @@ const App = () => {
             </div>
             <button type="submit">Submit</button>
           </form>
-        </>
+        </div>
       )}
+      <div className="blogs">
+        {blogs
+          .sort((a, b) => b.likes - a.likes)
+          .map((blog) => (
+            <Blog
+              handleDeleteBlog={handleDeleteBlog}
+              key={blog.id}
+              blog={blog}
+            />
+          ))}
+      </div>
     </div>
   );
 };
